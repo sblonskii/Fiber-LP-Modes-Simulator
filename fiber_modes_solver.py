@@ -6,6 +6,10 @@ import mpmath as mp
 import matplotlib.pyplot as plt
 from scipy.special import jv, kv
 from scipy.optimize import brentq
+import os
+from datetime import datetime
+import csv
+
 
 mp.mp.dps = 50   #Ustawienie czułości obliczeń dla biblioteki mpmath -bardzo duża dokładność
 
@@ -61,27 +65,49 @@ def ask_int(prompt: str, default_val: int):
         return ask_int(prompt, default_val)
 
 # ====== INTERAKTYWNY INPUT ======
+
+DEFAULTS = {
+    "lam": "1550 nm",
+    "n1": "1.450",
+    "n2": "1.442",
+    "r": "10 um"
+}
+
 print("\n=== Parametry światłowodu ===\n")
 print("Cześć! Jeśli chcesz skorzystać z programu, podaj proszę parametry,")
 print("abym mógł wyznaczyć dla Ciebie rozkłady pól EM dla modów w światłowodzie.\n")
+use_default = input("Czy użyć domyślnych parametrów? (tak/nie): ").strip().lower()
+
 while True:
     try:
-        lam = Parsuj1(input("Podaj długość fali λ (np. 1550 nm) : "))
-        n1  = Parsuj2(input("Podaj współczynnik załamania rdzenia n1 (np. 1.450) : "))
-        n2  = Parsuj2(input("Podaj współczynnik załamania płaszcza n2 (np. 1.442) : "))
-        r   = Parsuj1(input("Podaj promień rdzenia r (np. 10 um) : "))
+        if use_default == "tak":
+            lam = Parsuj1(DEFAULTS["lam"])
+            n1  = Parsuj2(DEFAULTS["n1"])
+            n2  = Parsuj2(DEFAULTS["n2"])
+            r   = Parsuj1(DEFAULTS["r"])
+        else:
+            lam = ask_with_units("Podaj długość fali λ", DEFAULTS["lam"])
+            n1  = ask_with_units("Podaj n1", DEFAULTS["n1"], Parsuj2)
+            n2  = ask_with_units("Podaj n2", DEFAULTS["n2"], Parsuj2)
+            r   = ask_with_units("Podaj promień rdzenia r", DEFAULTS["r"])
 
-        # === WALIDACJA ===
+        # ===== WALIDACJA =====
         if n1 <= 1 or n2 <= 1:
             print("Współczynniki załamania muszą być większe od 1.\n")
+            use_default = "n"
             continue
+
         if n2 >= n1:
             print("Warunek prowadzenia nie spełniony: n1 musi być > n2.\n")
+            use_default = "n"
             continue
+
         break  # jeśli wszystko OK → wychodzimy z pętli
 
     except ValueError as e:
         print(f"Błąd: {e}\nSpróbuj ponownie.\n")
+        use_default = "n"
+
     except KeyboardInterrupt:
         print("\nProgram przerwany przez użytkownika (Ctrl+C).")
         exit()
@@ -125,7 +151,14 @@ def fBessela_od_bety(l, beta):
 
     return rdzen + plaszcz
 
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+output_dir = f"wyniki_{timestamp}"
+os.makedirs(output_dir, exist_ok=True)
 
+csv_path = os.path.join(output_dir, "mody.csv")
+csv_file = open(csv_path, mode="w", newline="", encoding="utf-8")
+csv_writer = csv.writer(csv_file)
+csv_writer.writerow(["l", "p", "beta", "n_eff"])
 
 Lmax = 15
 for l in range(Lmax + 1):
@@ -142,6 +175,8 @@ for l in range(Lmax + 1):
     plt.title("Wykres równania dyspersyjnego")
     plt.xlim(k2, k1)
     plt.ylim(-50, 50)
+    plt.savefig(f"{output_dir}/dyspersja_l_{l}.png", dpi=300)
+    plt.close()
 
 
 
@@ -163,7 +198,12 @@ for l in range(Lmax + 1):
             miejsca_zerowe = sorted(miejsca_zerowe, reverse=True)
         print("Znalezione β (mody LP dla l = {}) :".format(l))
 
+       
         for p,b in enumerate(miejsca_zerowe, start = 1):
+            
+            n_eff = b / k0
+            csv_writer.writerow([l, p, f"{b:.12e}", f"{n_eff:.9f}"])
+            
             print(f"p = {p} :  β = {b:.6e}   n_eff = {b/k0:.6f} ")
 
 
@@ -213,6 +253,8 @@ for l in range(Lmax + 1):
                 plt.xlabel("r[μm]")
                 plt.ylabel("Intensywność (unorm.)")
                 plt.title(f"Profil radialny intensywności | l = {l} | p = {i} | n_eff ={b/k0:.5f}")
+                plt.savefig(f"{output_dir}/profil_l_{l}_p_{i}.png", dpi=300)
+                plt.close()
 
 
             else:
@@ -257,7 +299,8 @@ for l in range(Lmax + 1):
                     plt.ylabel("y [µm]")
                     plt.title(f"Intensywność 2D | l={l}, p={i}")
                     plt.tight_layout()
-                    plt.show()
+                    plt.savefig(f"{output_dir}/mapa2D_l_{l}_p_{i}.png", dpi=300)
+                    plt.close()
                 else:
                     pass
             else:
@@ -266,3 +309,6 @@ for l in range(Lmax + 1):
 print()
 print()
 print("Dzięki za skorzystanie z programu!")
+
+csv_file.close()
+print(f"Zapisano tabelę modów do: {csv_path}")
